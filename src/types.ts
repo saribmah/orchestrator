@@ -14,6 +14,7 @@ export interface AgentResponse {
 }
 
 export interface OrchestrationState {
+  id: string;
   feature: string;
   iteration: number;
   maxIterations: number;
@@ -22,6 +23,7 @@ export interface OrchestrationState {
   workingDir: string;
   generatedPrompt?: string;
   lastFailedStep?: "prompting" | "implementing" | "reviewing";
+  createdAt: string;
 }
 
 export interface OrchestratorOptions {

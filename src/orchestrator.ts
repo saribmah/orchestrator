@@ -10,7 +10,7 @@ import {
   buildFeedbackPrompt,
   formatIterationHeader,
 } from "./prompts/templates";
-import { saveState } from "./state";
+import { saveState, generateSessionId } from "./state";
 import type {
   OrchestrationState,
   OrchestratorOptions,
@@ -32,6 +32,7 @@ export async function orchestrate(
   resumeState?: OrchestrationState
 ): Promise<OrchestrationState> {
   const state: OrchestrationState = resumeState || {
+    id: generateSessionId(),
     feature,
     iteration: 0,
     maxIterations: options.maxIterations,
@@ -40,6 +41,7 @@ export async function orchestrate(
     workingDir: options.workingDir,
     generatedPrompt: undefined,
     lastFailedStep: undefined,
+    createdAt: new Date().toISOString(),
   };
 
   // Update options from resume state if needed
@@ -54,6 +56,7 @@ export async function orchestrate(
   console.log("\n" + "=".repeat(60));
   console.log("ORCHESTRATOR: Multi-Agent Feature Implementation");
   console.log("=".repeat(60));
+  console.log(`Session: ${state.id}`);
   console.log(`Feature: ${state.feature.slice(0, 100)}${state.feature.length > 100 ? "..." : ""}`);
   console.log(`Max iterations: ${state.maxIterations}`);
   console.log(`Working directory: ${options.workingDir}`);

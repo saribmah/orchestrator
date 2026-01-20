@@ -15,7 +15,8 @@ Usage:
 
 Options:
   -f, --file <file>         Read feature description from file
-  -r, --resume              Resume last session
+  -r, --resume              Resume last session (or specific session with --session)
+  -s, --session <id>        Session ID to resume (use with --resume)
   -n, --max-iterations <n>  Maximum review cycles (default: 5)
   -i, --interactive         Prompt before each step (default: true)
   --auto                    Run without prompts
@@ -27,10 +28,11 @@ Examples:
   orchestrator "Add user authentication with JWT"
   orchestrator -f feature.md -C ./my-project
   orchestrator --resume -v
+  orchestrator --resume --session 20250120-143052
   orchestrator "Add dark mode toggle" --max-iterations 5 --verbose
   orchestrator "Refactor database layer" --auto
 
-State is saved to: ~/.orchestrator/last-session.json
+Sessions are saved to: ~/.orchestrator/sessions/
 `;
 
 function printHelp() {
@@ -49,6 +51,10 @@ async function main() {
         type: "boolean",
         short: "r",
         default: false,
+      },
+      session: {
+        type: "string",
+        short: "s",
       },
       "max-iterations": {
         type: "string",
@@ -90,14 +96,19 @@ async function main() {
 
   // Handle resume
   if (values.resume) {
-    const savedState = await loadState();
+    const sessionId = values.session as string | undefined;
+    const savedState = await loadState(sessionId);
     if (!savedState) {
-      console.error("Error: No saved session found to resume");
-      console.error(`State file: ${getStateFilePath()}`);
+      if (sessionId) {
+        console.error(`Error: Session "${sessionId}" not found`);
+      } else {
+        console.error("Error: No saved session found to resume");
+      }
+      console.error(`Sessions directory: ${getStateFilePath()}`);
       process.exit(1);
     }
 
-    console.log("Resuming previous session...");
+    console.log(`Resuming session ${savedState.id}...`);
 
     const options: OrchestratorOptions = {
       maxIterations: savedState.maxIterations,
