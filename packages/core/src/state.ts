@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
-import type { OrchestrationState } from "./types";
+import type { OrchestrationState } from "./types.ts";
 
 const STATE_DIR = join(homedir(), ".orchestrator");
 const SESSIONS_DIR = join(STATE_DIR, "sessions");
@@ -90,13 +90,6 @@ export function listSessions(): string[] {
     .reverse();
 }
 
-export function getStateFilePath(sessionId?: string): string {
-  if (sessionId) {
-    return getSessionFilePath(sessionId);
-  }
-  const latestId = getLatestSessionId();
-  if (latestId) {
-    return getSessionFilePath(latestId);
-  }
+export function getSessionsDir(): string {
   return SESSIONS_DIR;
 }

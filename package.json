@@ -1,25 +1,16 @@
 {
   "name": "orchestrator",
   "version": "1.0.0",
-  "module": "src/index.ts",
-  "type": "module",
   "private": true,
-  "bin": {
-    "orchestrator": "./src/index.ts"
-  },
+  "workspaces": ["packages/*"],
   "scripts": {
-    "start": "bun run src/index.ts",
-    "dev": "bun --watch src/index.ts",
-    "lint": "oxlint src/",
-    "typecheck": "tsc --noEmit",
-    "format": "oxfmt --write src/"
+    "lint": "oxlint packages/",
+    "typecheck": "tsc --noEmit -p packages/cli && tsc --noEmit -p packages/core && tsc --noEmit -p packages/ui",
+    "format": "oxfmt --write packages/"
   },
   "devDependencies": {
-    "@types/bun": "latest",
     "oxfmt": "^0.26.0",
-    "oxlint": "^1.41.0"
-  },
-  "peerDependencies": {
+    "oxlint": "^1.41.0",
     "typescript": "^5"
   }
 }

@@ -2,7 +2,7 @@ import { spawn } from "bun";
 import { unlink } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
-import type { AgentResult } from "../types";
+import type { AgentResult } from "../types.ts";
 
 // Default timeout: 5 minutes for codex operations
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
@@ -35,7 +35,6 @@ async function readStreamWithTimeout(
     reader.releaseLock();
   }
 
-  // Concatenate all chunks
   const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
   const combined = new Uint8Array(totalLength);
   let offset = 0;
@@ -50,20 +49,13 @@ async function readStreamWithTimeout(
 export async function runCodexPromptGenerator(
   feature: string,
   workingDir: string,
-  verbose: boolean = false,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<AgentResult> {
   const outputFile = join(tmpdir(), `codex-prompt-${Date.now()}.txt`);
 
   try {
-    if (verbose) {
-      console.log("\n[Codex] Generating implementation prompt...");
-    }
-
     const prompt = `Given this feature request: "${feature}", generate a detailed implementation prompt for another AI coding agent. Include specific files to create/modify, acceptance criteria, and implementation steps. Be concise but thorough. Do not make any changes, just analyze and provide the prompt.`;
 
-    // Use read-only sandbox so codex only generates a prompt without making changes
-    // Use --output-last-message to capture just the final response
     const proc = spawn(
       [
         "codex",
@@ -84,7 +76,6 @@ export async function runCodexPromptGenerator(
       },
     );
 
-    // Read streams with timeout
     const exitPromise = proc.exited;
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => reject(new Error(`Codex timed out after ${timeoutMs / 1000}s`)), timeoutMs);
@@ -105,12 +96,6 @@ export async function runCodexPromptGenerator(
 
     const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
 
-    if (verbose) {
-      console.log("[Codex] Exit code:", exitCode);
-      console.log("[Codex] stdout length:", stdout.length);
-      console.log("[Codex] stderr length:", stderr.length);
-    }
-
     if (exitCode !== 0) {
       return {
         success: false,
@@ -119,27 +104,17 @@ export async function runCodexPromptGenerator(
       };
     }
 
-    // Read the output file for the final message
     let output: string;
     try {
       const file = Bun.file(outputFile);
       output = await file.text();
     } catch {
-      // Fall back to stdout/stderr if file doesn't exist
       output = stdout.trim() || stderr.trim();
     }
 
-    if (verbose) {
-      console.log("[Codex] Prompt generation complete");
-      console.log("[Codex] Output length:", output.length);
-    }
-
-    // Clean up temp file
     try {
       await unlink(outputFile);
-    } catch {
-      // Ignore cleanup errors
-    }
+    } catch {}
 
     return {
       success: true,
@@ -148,12 +123,9 @@ export async function runCodexPromptGenerator(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
-    // Clean up temp file on error
     try {
       await unlink(outputFile);
-    } catch {
-      // Ignore cleanup errors
-    }
+    } catch {}
 
     return {
       success: false,
@@ -166,18 +138,11 @@ export async function runCodexPromptGenerator(
 export async function runCodexReview(
   feature: string,
   workingDir: string,
-  verbose: boolean = false,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<AgentResult> {
   const outputFile = join(tmpdir(), `codex-review-${Date.now()}.txt`);
 
   try {
-    if (verbose) {
-      console.log("\n[Codex] Reviewing implementation...");
-    }
-
-    // Use codex exec with read-only sandbox for review
-    // This allows us to provide feature context
     const reviewPrompt = `Review the uncommitted changes in this repository against the original feature request.
 
 FEATURE REQUEST:
@@ -212,7 +177,6 @@ Do not make any changes - only analyze and provide your review verdict.`;
       },
     );
 
-    // Read streams with timeout
     const exitPromise = proc.exited;
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(
@@ -236,12 +200,6 @@ Do not make any changes - only analyze and provide your review verdict.`;
 
     const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
 
-    if (verbose) {
-      console.log("[Codex] Review exit code:", exitCode);
-      console.log("[Codex] stdout length:", stdout.length);
-      console.log("[Codex] stderr length:", stderr.length);
-    }
-
     if (exitCode !== 0) {
       return {
         success: false,
@@ -250,27 +208,17 @@ Do not make any changes - only analyze and provide your review verdict.`;
       };
     }
 
-    // Read the output file for the final message
     let output: string;
     try {
       const file = Bun.file(outputFile);
       output = await file.text();
     } catch {
-      // Fall back to stdout/stderr if file doesn't exist
       output = stdout.trim() || stderr.trim();
     }
 
-    if (verbose) {
-      console.log("[Codex] Review complete");
-      console.log("[Codex] Output length:", output.length);
-    }
-
-    // Clean up temp file
     try {
       await unlink(outputFile);
-    } catch {
-      // Ignore cleanup errors
-    }
+    } catch {}
 
     return {
       success: true,
@@ -279,12 +227,9 @@ Do not make any changes - only analyze and provide your review verdict.`;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
-    // Clean up temp file on error
     try {
       await unlink(outputFile);
-    } catch {
-      // Ignore cleanup errors
-    }
+    } catch {}
 
     return {
       success: false,
@@ -304,7 +249,6 @@ export function isApproved(reviewOutput: string): boolean {
 }
 
 export function extractFeedback(reviewOutput: string): string {
-  // Remove any approval markers and clean up the feedback
   const lines = reviewOutput
     .split("\n")
     .filter((line) => {

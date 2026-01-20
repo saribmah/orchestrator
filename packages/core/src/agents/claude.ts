@@ -2,7 +2,7 @@ import { spawn, spawnSync } from "bun";
 import { existsSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
-import type { AgentResult } from "../types";
+import type { AgentResult } from "../types.ts";
 
 function findClaudeExecutable(): string {
   // Check common locations for claude
@@ -77,19 +77,12 @@ async function readStreamWithTimeout(
 export async function runClaude(
   prompt: string,
   workingDir: string,
-  verbose: boolean = false,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<AgentResult> {
   try {
-    if (verbose) {
-      console.log("\n[Claude] Starting implementation...");
-      console.log("[Claude] Working directory:", workingDir);
-      console.log("[Claude] Executable:", CLAUDE_PATH);
-    }
-
     const proc = spawn([CLAUDE_PATH, "-p", prompt, "--dangerously-skip-permissions"], {
       cwd: workingDir,
-      stdin: "ignore", // Close stdin so Claude doesn't wait for input
+      stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
       env: {
@@ -98,36 +91,25 @@ export async function runClaude(
       },
     });
 
-    // Read stdout and stderr concurrently with timeout
-    // Also wait for process exit with timeout
     const exitPromise = proc.exited;
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => reject(new Error(`Claude timed out after ${timeoutMs / 1000}s`)), timeoutMs);
     });
 
-    // Start reading streams immediately (don't await yet)
     const stdoutPromise = readStreamWithTimeout(proc.stdout, timeoutMs);
     const stderrPromise = readStreamWithTimeout(proc.stderr, timeoutMs);
 
-    // Wait for exit or timeout
     let exitCode: number;
     try {
       exitCode = await Promise.race([exitPromise, timeoutPromise]);
     } catch (error) {
-      // Timeout - try to kill the process
       try {
         proc.kill();
       } catch {}
       throw error;
     }
 
-    // Now get the output (should be ready since process exited)
     const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
-
-    if (verbose) {
-      console.log("[Claude] Exit code:", exitCode);
-      console.log("[Claude] Output length:", stdout.length);
-    }
 
     if (exitCode !== 0) {
       return {
@@ -135,10 +117,6 @@ export async function runClaude(
         output: stdout,
         error: stderr || `Claude exited with code ${exitCode}`,
       };
-    }
-
-    if (verbose) {
-      console.log("[Claude] Implementation complete");
     }
 
     return {
@@ -153,4 +131,8 @@ export async function runClaude(
       error: `Failed to run Claude: ${errorMessage}`,
     };
   }
+}
+
+export function getClaudePath(): string {
+  return CLAUDE_PATH;
 }
