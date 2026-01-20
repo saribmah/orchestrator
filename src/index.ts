@@ -143,7 +143,7 @@ async function main() {
       const file = Bun.file(values.file as string);
       feature = await file.text();
       feature = feature.trim();
-    } catch (error) {
+    } catch {
       console.error(`Error: Could not read file "${values.file}"\n`);
       process.exit(1);
     }

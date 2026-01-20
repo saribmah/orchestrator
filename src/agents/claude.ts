@@ -36,7 +36,7 @@ const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
 async function readStreamWithTimeout(
   stream: ReadableStream<Uint8Array> | null,
-  timeoutMs: number
+  timeoutMs: number,
 ): Promise<string> {
   if (!stream) return "";
 
@@ -78,7 +78,7 @@ export async function runClaude(
   prompt: string,
   workingDir: string,
   verbose: boolean = false,
-  timeoutMs: number = DEFAULT_TIMEOUT_MS
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<AgentResult> {
   try {
     if (verbose) {
@@ -87,28 +87,22 @@ export async function runClaude(
       console.log("[Claude] Executable:", CLAUDE_PATH);
     }
 
-    const proc = spawn(
-      [CLAUDE_PATH, "-p", prompt, "--dangerously-skip-permissions"],
-      {
-        cwd: workingDir,
-        stdin: "ignore", // Close stdin so Claude doesn't wait for input
-        stdout: "pipe",
-        stderr: "pipe",
-        env: {
-          ...process.env,
-          PATH: process.env.PATH,
-        },
-      }
-    );
+    const proc = spawn([CLAUDE_PATH, "-p", prompt, "--dangerously-skip-permissions"], {
+      cwd: workingDir,
+      stdin: "ignore", // Close stdin so Claude doesn't wait for input
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        PATH: process.env.PATH,
+      },
+    });
 
     // Read stdout and stderr concurrently with timeout
     // Also wait for process exit with timeout
     const exitPromise = proc.exited;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(
-        () => reject(new Error(`Claude timed out after ${timeoutMs / 1000}s`)),
-        timeoutMs
-      );
+      setTimeout(() => reject(new Error(`Claude timed out after ${timeoutMs / 1000}s`)), timeoutMs);
     });
 
     // Start reading streams immediately (don't await yet)
@@ -152,8 +146,7 @@ export async function runClaude(
       output: stdout,
     };
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return {
       success: false,
       output: "",

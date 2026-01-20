@@ -9,7 +9,7 @@ const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 
 async function readStreamWithTimeout(
   stream: ReadableStream<Uint8Array> | null,
-  timeoutMs: number
+  timeoutMs: number,
 ): Promise<string> {
   if (!stream) return "";
 
@@ -51,7 +51,7 @@ export async function runCodexPromptGenerator(
   feature: string,
   workingDir: string,
   verbose: boolean = false,
-  timeoutMs: number = DEFAULT_TIMEOUT_MS
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<AgentResult> {
   const outputFile = join(tmpdir(), `codex-prompt-${Date.now()}.txt`);
 
@@ -81,16 +81,13 @@ export async function runCodexPromptGenerator(
         stdin: "ignore",
         stdout: "pipe",
         stderr: "pipe",
-      }
+      },
     );
 
     // Read streams with timeout
     const exitPromise = proc.exited;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(
-        () => reject(new Error(`Codex timed out after ${timeoutMs / 1000}s`)),
-        timeoutMs
-      );
+      setTimeout(() => reject(new Error(`Codex timed out after ${timeoutMs / 1000}s`)), timeoutMs);
     });
 
     const stdoutPromise = readStreamWithTimeout(proc.stdout, timeoutMs);
@@ -149,8 +146,7 @@ export async function runCodexPromptGenerator(
       output,
     };
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
     // Clean up temp file on error
     try {
@@ -171,7 +167,7 @@ export async function runCodexReview(
   feature: string,
   workingDir: string,
   verbose: boolean = false,
-  timeoutMs: number = DEFAULT_TIMEOUT_MS
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<AgentResult> {
   const outputFile = join(tmpdir(), `codex-review-${Date.now()}.txt`);
 
@@ -213,7 +209,7 @@ Do not make any changes - only analyze and provide your review verdict.`;
         stdin: "ignore",
         stdout: "pipe",
         stderr: "pipe",
-      }
+      },
     );
 
     // Read streams with timeout
@@ -221,7 +217,7 @@ Do not make any changes - only analyze and provide your review verdict.`;
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(
         () => reject(new Error(`Codex review timed out after ${timeoutMs / 1000}s`)),
-        timeoutMs
+        timeoutMs,
       );
     });
 
@@ -281,8 +277,7 @@ Do not make any changes - only analyze and provide your review verdict.`;
       output,
     };
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
     // Clean up temp file on error
     try {

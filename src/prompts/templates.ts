@@ -1,7 +1,7 @@
 export function buildImplementationPrompt(
   generatedPrompt: string,
   iteration: number,
-  feedback?: string
+  feedback?: string,
 ): string {
   let prompt = generatedPrompt;
 
@@ -23,7 +23,7 @@ ${generatedPrompt}
 export function buildFeedbackPrompt(
   originalFeature: string,
   feedback: string,
-  iteration: number
+  iteration: number,
 ): string {
   return `
 You are continuing to implement a feature. This is iteration ${iteration}.
@@ -42,7 +42,7 @@ Do not explain what you're doing - just make the changes.
 export function formatIterationHeader(
   iteration: number,
   maxIterations: number,
-  status: string
+  status: string,
 ): string {
   return `\n${"=".repeat(60)}\nIteration ${iteration}/${maxIterations} - ${status}\n${"=".repeat(60)}`;
 }

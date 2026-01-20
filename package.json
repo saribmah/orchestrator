@@ -9,10 +9,15 @@
   },
   "scripts": {
     "start": "bun run src/index.ts",
-    "dev": "bun --watch src/index.ts"
+    "dev": "bun --watch src/index.ts",
+    "lint": "oxlint src/",
+    "typecheck": "tsc --noEmit",
+    "format": "oxfmt --write src/"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "oxfmt": "^0.26.0",
+    "oxlint": "^1.41.0"
   },
   "peerDependencies": {
     "typescript": "^5"

@@ -5,17 +5,9 @@ import {
   isApproved,
   extractFeedback,
 } from "./agents/codex";
-import {
-  buildImplementationPrompt,
-  buildFeedbackPrompt,
-  formatIterationHeader,
-} from "./prompts/templates";
+import { buildFeedbackPrompt, formatIterationHeader } from "./prompts/templates";
 import { saveState, generateSessionId } from "./state";
-import type {
-  OrchestrationState,
-  OrchestratorOptions,
-  AgentResponse,
-} from "./types";
+import type { OrchestrationState, OrchestratorOptions } from "./types";
 
 async function promptUser(message: string): Promise<boolean> {
   process.stdout.write(`\n${message} (y/n): `);
@@ -29,7 +21,7 @@ async function promptUser(message: string): Promise<boolean> {
 export async function orchestrate(
   feature: string,
   options: OrchestratorOptions,
-  resumeState?: OrchestrationState
+  resumeState?: OrchestrationState,
 ): Promise<OrchestrationState> {
   const state: OrchestrationState = resumeState || {
     id: generateSessionId(),
@@ -61,7 +53,9 @@ export async function orchestrate(
   console.log(`Max iterations: ${state.maxIterations}`);
   console.log(`Working directory: ${options.workingDir}`);
   if (resumeState) {
-    console.log(`Resuming from iteration: ${state.iteration}, step: ${resumingFromStep || state.status}`);
+    console.log(
+      `Resuming from iteration: ${state.iteration}, step: ${resumingFromStep || state.status}`,
+    );
   }
   console.log("=".repeat(60));
 
@@ -79,7 +73,7 @@ export async function orchestrate(
     const promptResult = await runCodexPromptGenerator(
       state.feature,
       options.workingDir,
-      options.verbose
+      options.verbose,
     );
 
     if (!promptResult.success) {
@@ -130,9 +124,7 @@ export async function orchestrate(
 
   // Get last feedback if resuming
   if (resumeState && state.history.length > 0) {
-    const lastReview = [...state.history].reverse().find(
-      (h) => h.role === "reviewer"
-    );
+    const lastReview = [...state.history].reverse().find((h) => h.role === "reviewer");
     if (lastReview && !isApproved(lastReview.content)) {
       feedback = extractFeedback(lastReview.content);
     }
@@ -140,7 +132,8 @@ export async function orchestrate(
 
   while (state.iteration < state.maxIterations) {
     // Only increment if we're not resuming from a failed step in this iteration
-    const shouldSkipImplementation = resumingFromStep === "reviewing" && state.iteration === resumingIteration;
+    const shouldSkipImplementation =
+      resumingFromStep === "reviewing" && state.iteration === resumingIteration;
 
     if (!shouldSkipImplementation) {
       state.iteration++;
@@ -152,13 +145,7 @@ export async function orchestrate(
       state.lastFailedStep = "implementing";
       await saveState(state);
 
-      console.log(
-        formatIterationHeader(
-          state.iteration,
-          state.maxIterations,
-          "IMPLEMENTING"
-        )
-      );
+      console.log(formatIterationHeader(state.iteration, state.maxIterations, "IMPLEMENTING"));
 
       const implementPrompt =
         state.iteration === 1 || !feedback
@@ -182,17 +169,10 @@ export async function orchestrate(
 
       console.log("\n[Orchestrator] Sending to Claude for implementation...");
 
-      const implementResult = await runClaude(
-        implementPrompt,
-        options.workingDir,
-        options.verbose
-      );
+      const implementResult = await runClaude(implementPrompt, options.workingDir, options.verbose);
 
       if (!implementResult.success) {
-        console.error(
-          "\n[Error] Claude implementation failed:",
-          implementResult.error
-        );
+        console.error("\n[Error] Claude implementation failed:", implementResult.error);
         state.status = "failed";
         await saveState(state);
         return state;
@@ -218,13 +198,7 @@ export async function orchestrate(
         console.log("[Claude] Implementation complete");
       }
     } else {
-      console.log(
-        formatIterationHeader(
-          state.iteration,
-          state.maxIterations,
-          "RESUMING REVIEW"
-        )
-      );
+      console.log(formatIterationHeader(state.iteration, state.maxIterations, "RESUMING REVIEW"));
       console.log("[Orchestrator] Skipping implementation - resuming at review step");
     }
 
@@ -235,11 +209,7 @@ export async function orchestrate(
 
     console.log("\n[Orchestrator] Asking Codex to review changes...");
 
-    const reviewResult = await runCodexReview(
-      state.feature,
-      options.workingDir,
-      options.verbose
-    );
+    const reviewResult = await runCodexReview(state.feature, options.workingDir, options.verbose);
 
     if (!reviewResult.success) {
       console.error("\n[Error] Codex review failed:", reviewResult.error);
@@ -292,15 +262,11 @@ export async function orchestrate(
 
   // Max iterations reached
   console.log("\n" + "=".repeat(60));
-  console.log(
-    `Max iterations (${state.maxIterations}) reached without approval`
-  );
+  console.log(`Max iterations (${state.maxIterations}) reached without approval`);
   console.log("=".repeat(60));
 
   if (options.interactive) {
-    const continueAnyway = await promptUser(
-      "Continue with additional iterations?"
-    );
+    const continueAnyway = await promptUser("Continue with additional iterations?");
     if (continueAnyway) {
       state.maxIterations += 3;
       state.lastFailedStep = undefined;
