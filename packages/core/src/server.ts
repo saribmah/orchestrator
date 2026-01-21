@@ -4,6 +4,7 @@ import { orchestrate } from "./orchestrator.ts";
 import { loadState, listSessions, getSessionsDir, generateSessionId } from "./state.ts";
 import { bus, emitEvent } from "./bus.ts";
 import { createSSEHandler, startKeepAlive } from "./sse.ts";
+import { queue } from "./queue.ts";
 import type { OrchestrationState, OrchestratorOptions } from "./types.ts";
 
 const DEFAULT_PORT = 3100;
@@ -195,12 +196,145 @@ app.get("/sessions/:id/events", async (c) => {
   return handler(c);
 });
 
+// ============ Queue endpoints ============
+
+// Get queue state
+app.get("/queue", (c) => {
+  return c.json(queue.getState());
+});
+
+// Add item to queue
+app.post("/queue", async (c) => {
+  const body = await c.req.json();
+  const { feature, options } = body as {
+    feature: string;
+    options?: Partial<OrchestratorOptions>;
+  };
+
+  if (!feature) {
+    return c.json({ error: "Feature is required" }, 400);
+  }
+
+  const orchestratorOptions: OrchestratorOptions = {
+    maxIterations: options?.maxIterations ?? 5,
+    interactive: options?.interactive ?? false, // Default to non-interactive for queue
+    verbose: options?.verbose ?? false,
+    workingDir: options?.workingDir ?? process.cwd(),
+    autoCommit: options?.autoCommit ?? false,
+  };
+
+  const item = queue.add(feature, orchestratorOptions);
+
+  return c.json({ item, message: "Added to queue" }, 202);
+});
+
+// Add multiple items to queue
+app.post("/queue/batch", async (c) => {
+  const body = await c.req.json();
+  const { items } = body as {
+    items: Array<{
+      feature: string;
+      options?: Partial<OrchestratorOptions>;
+    }>;
+  };
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return c.json({ error: "Items array is required" }, 400);
+  }
+
+  const queueItems = items.map(({ feature, options }) => ({
+    feature,
+    options: {
+      maxIterations: options?.maxIterations ?? 5,
+      interactive: options?.interactive ?? false,
+      verbose: options?.verbose ?? false,
+      workingDir: options?.workingDir ?? process.cwd(),
+      autoCommit: options?.autoCommit ?? false,
+    } as OrchestratorOptions,
+  }));
+
+  const addedItems = queue.addMany(queueItems);
+
+  return c.json({ items: addedItems, message: `Added ${addedItems.length} items to queue` }, 202);
+});
+
+// Get specific queue item
+app.get("/queue/:id", (c) => {
+  const itemId = c.req.param("id");
+  const item = queue.getItem(itemId);
+
+  if (!item) {
+    return c.json({ error: "Queue item not found" }, 404);
+  }
+
+  return c.json(item);
+});
+
+// Remove item from queue
+app.delete("/queue/:id", (c) => {
+  const itemId = c.req.param("id");
+  const removed = queue.remove(itemId);
+
+  if (!removed) {
+    return c.json({ error: "Queue item not found or not pending" }, 404);
+  }
+
+  return c.json({ message: "Item removed from queue" });
+});
+
+// Clear all pending items from queue
+app.delete("/queue", (c) => {
+  const clearedCount = queue.clearPending();
+  return c.json({ message: `Cleared ${clearedCount} pending items` });
+});
+
+// Respond to a question for a queue session
+app.post("/queue/respond/:sessionId", async (c) => {
+  const sessionId = c.req.param("sessionId");
+  const body = await c.req.json();
+  const { answer } = body as { answer: boolean };
+
+  // Try queue's pending questions first
+  if (queue.respondToQuestion(sessionId, answer)) {
+    return c.json({ message: "Response recorded" });
+  }
+
+  // Fall back to regular session pending questions
+  const pending = pendingQuestions.get(sessionId);
+  if (!pending) {
+    return c.json({ error: "No pending question for this session" }, 400);
+  }
+
+  pending.resolve(answer);
+  pendingQuestions.delete(sessionId);
+
+  return c.json({ message: "Response recorded" });
+});
+
+// SSE stream for queue events
+app.get("/queue/events", async (c) => {
+  // Use special __queue__ session ID for queue events
+  const handler = createSSEHandler("__queue__");
+  return handler(c);
+});
+
+// ============ Stats endpoint ============
+
 // Stats endpoint for debugging
 app.get("/stats", (c) => {
+  const queueState = queue.getState();
   return c.json({
     busSubscribers: bus.subscriberCount,
     pendingQuestions: pendingQuestions.size,
     activeStates: activeSessionStates.size,
+    queue: {
+      total: queueState.items.length,
+      pending: queueState.items.filter((i) => i.status === "pending").length,
+      running: queueState.items.filter((i) => i.status === "running").length,
+      completed: queueState.items.filter((i) => i.status === "completed").length,
+      failed: queueState.items.filter((i) => i.status === "failed").length,
+      isProcessing: queueState.isProcessing,
+    },
   });
 });
 
@@ -217,12 +351,22 @@ export default {
 console.log(`Orchestrator server running at http://localhost:${port}`);
 console.log(`
 Endpoints:
-  GET  /health              - Health check
-  GET  /sessions            - List all sessions
-  POST /sessions            - Start new session
-  GET  /sessions/:id        - Get session state
-  POST /sessions/:id/resume - Resume session
-  POST /sessions/:id/respond - Respond to question
-  GET  /sessions/:id/events - SSE event stream
-  GET  /stats               - Server stats
+  GET  /health                    - Health check
+  GET  /sessions                  - List all sessions
+  POST /sessions                  - Start new session
+  GET  /sessions/:id              - Get session state
+  POST /sessions/:id/resume       - Resume session
+  POST /sessions/:id/respond      - Respond to question
+  GET  /sessions/:id/events       - SSE event stream
+
+  GET  /queue                     - Get queue state
+  POST /queue                     - Add item to queue
+  POST /queue/batch               - Add multiple items to queue
+  GET  /queue/:id                 - Get queue item
+  DELETE /queue/:id               - Remove item from queue
+  DELETE /queue                   - Clear pending queue items
+  POST /queue/respond/:sessionId  - Respond to queue session question
+  GET  /queue/events              - SSE queue events
+
+  GET  /stats                     - Server stats
 `);

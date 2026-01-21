@@ -133,3 +133,43 @@ export interface ErrorEvent extends ServerEvent {
 
 // Event emitter callback type
 export type EventCallback = (event: ServerEvent) => void;
+
+// Queue types
+export type QueueItemStatus = "pending" | "running" | "completed" | "failed";
+
+export interface QueueItem {
+  id: string;
+  feature: string;
+  options: OrchestratorOptions;
+  status: QueueItemStatus;
+  sessionId?: string;
+  addedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  error?: string;
+}
+
+export interface QueueState {
+  items: QueueItem[];
+  isProcessing: boolean;
+  currentItemId?: string;
+}
+
+// Queue event types
+export type QueueEventType =
+  | "queue_item_added"
+  | "queue_item_started"
+  | "queue_item_completed"
+  | "queue_item_failed"
+  | "queue_item_removed"
+  | "queue_cleared";
+
+export interface QueueEvent {
+  type: QueueEventType;
+  timestamp: string;
+  data: {
+    itemId?: string;
+    item?: QueueItem;
+    queue?: QueueState;
+  };
+}

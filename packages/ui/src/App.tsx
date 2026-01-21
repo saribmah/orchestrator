@@ -3,10 +3,11 @@ import { Landing } from "./components/Landing.tsx";
 import { NewSession } from "./components/NewSession.tsx";
 import { SessionList } from "./components/SessionList.tsx";
 import { SessionView } from "./components/SessionView.tsx";
+import { QueueView } from "./components/QueueView.tsx";
 import { getHealth, startSession, type NewSessionOptions } from "./api.ts";
 import "./styles.css";
 
-type View = "landing" | "new-session" | "session-list" | "session-view";
+type View = "landing" | "new-session" | "session-list" | "session-view" | "queue";
 
 export function App() {
   const [view, setView] = useState<View>("landing");
@@ -50,6 +51,7 @@ export function App() {
         <Landing
           onNewSession={() => setView("new-session")}
           onViewSessions={() => setView("session-list")}
+          onViewQueue={() => setView("queue")}
           serverConnected={serverConnected}
         />
       )}
@@ -73,6 +75,13 @@ export function App() {
         <SessionView
           sessionId={selectedSessionId}
           onBack={() => setView("session-list")}
+        />
+      )}
+
+      {view === "queue" && (
+        <QueueView
+          onBack={() => setView("landing")}
+          onViewSession={handleSelectSession}
         />
       )}
     </div>

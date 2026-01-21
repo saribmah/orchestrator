@@ -1,10 +1,16 @@
 interface LandingProps {
   onNewSession: () => void;
   onViewSessions: () => void;
+  onViewQueue: () => void;
   serverConnected: boolean;
 }
 
-export function Landing({ onNewSession, onViewSessions, serverConnected }: LandingProps) {
+export function Landing({
+  onNewSession,
+  onViewSessions,
+  onViewQueue,
+  serverConnected,
+}: LandingProps) {
   return (
     <div className="landing">
       <div className="landing-header">
@@ -23,6 +29,15 @@ export function Landing({ onNewSession, onViewSessions, serverConnected }: Landi
         >
           <span className="btn-icon">+</span>
           Start New Session
+        </button>
+
+        <button
+          className="btn btn-secondary btn-large"
+          onClick={onViewQueue}
+          disabled={!serverConnected}
+        >
+          <span className="btn-icon">⋮</span>
+          Feature Queue
         </button>
 
         <button
@@ -54,6 +69,11 @@ export function Landing({ onNewSession, onViewSessions, serverConnected }: Landi
             <strong>Iterate until approved</strong> - The loop continues until the feature is complete
           </li>
         </ol>
+
+        <h3>Feature Queue</h3>
+        <p>
+          Queue up multiple features to be implemented sequentially. Each feature will be processed one at a time, with the next feature starting automatically when the previous one completes.
+        </p>
       </div>
     </div>
   );

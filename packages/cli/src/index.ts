@@ -13,6 +13,9 @@ Usage:
   orchestrator -f <file> [options]
   orchestrator --resume [options]
   orchestrator --server [options]
+  orchestrator --queue "<feature>" [options]
+  orchestrator --queue-list
+  orchestrator --queue-file <file> [options]
 
 Options:
   -f, --file <file>         Read feature description from file
@@ -28,6 +31,13 @@ Options:
   --server-url <url>        Connect to existing server (default: ${DEFAULT_SERVER_URL})
   -h, --help                Show this help message
 
+Queue Options:
+  --queue                   Add feature to queue instead of running immediately
+  --queue-list              Show current queue status
+  --queue-file <file>       Add multiple features from file (one per line)
+  --queue-clear             Clear all pending queue items
+  --queue-watch             Watch queue progress with live updates
+
 Examples:
   orchestrator "Add user authentication with JWT"
   orchestrator -f feature.md -C ./my-project
@@ -37,6 +47,12 @@ Examples:
   orchestrator "Refactor database layer" --auto
   orchestrator --server  # Start server only
 
+  # Queue examples
+  orchestrator --queue "Add login page" -C ./my-project
+  orchestrator --queue-file features.txt --auto-commit
+  orchestrator --queue-list
+  orchestrator --queue-watch
+
 Sessions are saved to: ~/.orchestrator/sessions/
 `;
 
@@ -45,6 +61,30 @@ interface ServerEvent {
   sessionId: string;
   timestamp: string;
   data: Record<string, unknown>;
+}
+
+interface QueueItem {
+  id: string;
+  feature: string;
+  options: {
+    maxIterations: number;
+    interactive: boolean;
+    verbose: boolean;
+    workingDir: string;
+    autoCommit: boolean;
+  };
+  status: "pending" | "running" | "completed" | "failed";
+  sessionId?: string;
+  addedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  error?: string;
+}
+
+interface QueueState {
+  items: QueueItem[];
+  isProcessing: boolean;
+  currentItemId?: string;
 }
 
 function printHelp() {
@@ -66,6 +106,216 @@ async function checkServerHealth(serverUrl: string): Promise<boolean> {
     return response.ok;
   } catch {
     return false;
+  }
+}
+
+// Queue functions
+async function getQueueState(serverUrl: string): Promise<QueueState> {
+  const res = await fetch(`${serverUrl}/queue`);
+  if (!res.ok) throw new Error("Failed to get queue state");
+  return res.json();
+}
+
+async function addToQueue(
+  serverUrl: string,
+  feature: string,
+  options: {
+    maxIterations: number;
+    verbose: boolean;
+    workingDir: string;
+    autoCommit: boolean;
+  },
+): Promise<QueueItem> {
+  const res = await fetch(`${serverUrl}/queue`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      feature,
+      options: {
+        maxIterations: options.maxIterations,
+        interactive: false,
+        verbose: options.verbose,
+        workingDir: options.workingDir,
+        autoCommit: options.autoCommit,
+      },
+    }),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.error || "Failed to add to queue");
+  }
+  const data = await res.json();
+  return data.item;
+}
+
+async function addManyToQueue(
+  serverUrl: string,
+  items: Array<{
+    feature: string;
+    options: {
+      maxIterations: number;
+      verbose: boolean;
+      workingDir: string;
+      autoCommit: boolean;
+    };
+  }>,
+): Promise<QueueItem[]> {
+  const res = await fetch(`${serverUrl}/queue/batch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      items: items.map((item) => ({
+        feature: item.feature,
+        options: {
+          maxIterations: item.options.maxIterations,
+          interactive: false,
+          verbose: item.options.verbose,
+          workingDir: item.options.workingDir,
+          autoCommit: item.options.autoCommit,
+        },
+      })),
+    }),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.error || "Failed to add items to queue");
+  }
+  const data = await res.json();
+  return data.items;
+}
+
+async function clearQueuePending(serverUrl: string): Promise<number> {
+  const res = await fetch(`${serverUrl}/queue`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to clear queue");
+  const data = await res.json();
+  return parseInt(data.message.match(/\d+/)?.[0] || "0", 10);
+}
+
+function printQueueStatus(queue: QueueState) {
+  console.log("\n" + "=".repeat(60));
+  console.log("QUEUE STATUS");
+  console.log("=".repeat(60));
+
+  if (queue.items.length === 0) {
+    console.log("\nQueue is empty");
+    return;
+  }
+
+  const running = queue.items.filter((i) => i.status === "running");
+  const pending = queue.items.filter((i) => i.status === "pending");
+  const completed = queue.items.filter((i) => i.status === "completed");
+  const failed = queue.items.filter((i) => i.status === "failed");
+
+  if (running.length > 0) {
+    console.log("\n[RUNNING]");
+    for (const item of running) {
+      console.log(`  ${item.id}: ${item.feature.slice(0, 60)}${item.feature.length > 60 ? "..." : ""}`);
+      console.log(`    Session: ${item.sessionId || "N/A"}`);
+      console.log(`    Started: ${new Date(item.startedAt!).toLocaleString()}`);
+    }
+  }
+
+  if (pending.length > 0) {
+    console.log("\n[PENDING] (" + pending.length + " items)");
+    for (const item of pending) {
+      console.log(`  ${item.id}: ${item.feature.slice(0, 60)}${item.feature.length > 60 ? "..." : ""}`);
+    }
+  }
+
+  if (completed.length > 0) {
+    console.log("\n[COMPLETED] (" + completed.length + " items)");
+    for (const item of completed.slice(-5)) {
+      console.log(`  ${item.id}: ${item.feature.slice(0, 60)}${item.feature.length > 60 ? "..." : ""}`);
+    }
+    if (completed.length > 5) {
+      console.log(`  ... and ${completed.length - 5} more`);
+    }
+  }
+
+  if (failed.length > 0) {
+    console.log("\n[FAILED] (" + failed.length + " items)");
+    for (const item of failed.slice(-5)) {
+      console.log(`  ${item.id}: ${item.feature.slice(0, 60)}${item.feature.length > 60 ? "..." : ""}`);
+      if (item.error) {
+        console.log(`    Error: ${item.error}`);
+      }
+    }
+  }
+
+  console.log("\n" + "=".repeat(60));
+}
+
+async function watchQueue(serverUrl: string, verbose: boolean): Promise<void> {
+  console.log("\n[Queue] Watching queue progress (Ctrl+C to stop)...\n");
+
+  const response = await fetch(`${serverUrl}/queue/events`);
+  if (!response.ok || !response.body) {
+    throw new Error("Failed to connect to queue event stream");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        try {
+          const event = JSON.parse(line.slice(6)) as ServerEvent;
+          handleQueueEvent(event, verbose);
+        } catch {
+          // Skip malformed events
+        }
+      }
+    }
+  }
+}
+
+function handleQueueEvent(event: ServerEvent, verbose: boolean) {
+  const data = event.data;
+  const timestamp = new Date().toLocaleTimeString();
+
+  switch (event.type) {
+    case "queue_item_added":
+      console.log(`[${timestamp}] Added to queue: ${(data.feature as string)?.slice(0, 50)}...`);
+      break;
+
+    case "queue_item_started":
+      console.log(`[${timestamp}] Started: ${data.itemId} (Session: ${data.sessionId})`);
+      break;
+
+    case "queue_item_completed":
+      console.log(`[${timestamp}] Completed: ${data.itemId}`);
+      break;
+
+    case "queue_item_failed":
+      console.log(`[${timestamp}] Failed: ${data.itemId} - ${data.error}`);
+      break;
+
+    case "log":
+      if (verbose || data.level !== "verbose") {
+        console.log(`  ${data.message}`);
+      }
+      break;
+
+    case "agent_start":
+      console.log(`  [${data.agent}] Starting ${data.role}...`);
+      break;
+
+    case "agent_complete":
+      console.log(`  [${data.agent}] ${data.role} ${data.success ? "complete" : "failed"}`);
+      break;
+
+    case "iteration":
+      console.log(`  Iteration ${data.iteration}/${data.maxIterations}`);
+      break;
   }
 }
 
@@ -231,6 +481,12 @@ async function main() {
       server: { type: "boolean", default: false },
       "server-url": { type: "string", default: DEFAULT_SERVER_URL },
       help: { type: "boolean", short: "h", default: false },
+      // Queue options
+      queue: { type: "boolean", default: false },
+      "queue-list": { type: "boolean", default: false },
+      "queue-file": { type: "string" },
+      "queue-clear": { type: "boolean", default: false },
+      "queue-watch": { type: "boolean", default: false },
     },
     allowPositionals: true,
   });
@@ -281,6 +537,127 @@ async function main() {
     cleanup();
     process.exit(0);
   });
+
+  // Queue commands
+  try {
+    // Queue list
+    if (values["queue-list"]) {
+      const queue = await getQueueState(serverUrl);
+      printQueueStatus(queue);
+      cleanup();
+      process.exit(0);
+    }
+
+    // Queue clear
+    if (values["queue-clear"]) {
+      const cleared = await clearQueuePending(serverUrl);
+      console.log(`Cleared ${cleared} pending item(s) from queue`);
+      cleanup();
+      process.exit(0);
+    }
+
+    // Queue watch
+    if (values["queue-watch"]) {
+      await watchQueue(serverUrl, verbose);
+      cleanup();
+      process.exit(0);
+    }
+
+    // Add from file to queue
+    if (values["queue-file"]) {
+      const filePath = values["queue-file"] as string;
+      let features: string[];
+
+      try {
+        const file = Bun.file(filePath);
+        const content = await file.text();
+
+        // Try parsing as JSON array first
+        try {
+          const parsed = JSON.parse(content);
+          if (Array.isArray(parsed)) {
+            features = parsed.map((item: string | { feature: string }) =>
+              typeof item === "string" ? item : item.feature
+            );
+          } else {
+            throw new Error("Not an array");
+          }
+        } catch {
+          // Treat as one feature per line
+          features = content
+            .split("\n")
+            .map((line) => line.trim())
+            .filter((line) => line && !line.startsWith("#"));
+        }
+      } catch {
+        console.error(`Error: Could not read file "${filePath}"`);
+        cleanup();
+        process.exit(1);
+      }
+
+      if (features.length === 0) {
+        console.error("Error: No features found in file");
+        cleanup();
+        process.exit(1);
+      }
+
+      const options = {
+        maxIterations: parseInt(values["max-iterations"] as string, 10),
+        verbose,
+        workingDir: values["working-dir"] as string,
+        autoCommit,
+      };
+
+      const items = await addManyToQueue(
+        serverUrl,
+        features.map((feature) => ({ feature, options }))
+      );
+
+      console.log(`Added ${items.length} feature(s) to queue:`);
+      for (const item of items) {
+        console.log(`  - ${item.id}: ${item.feature.slice(0, 50)}${item.feature.length > 50 ? "..." : ""}`);
+      }
+
+      if (values["queue-watch"]) {
+        await watchQueue(serverUrl, verbose);
+      }
+
+      cleanup();
+      process.exit(0);
+    }
+
+    // Add single item to queue
+    if (values.queue) {
+      const feature = positionals[0];
+      if (!feature) {
+        console.error("Error: Feature description is required with --queue");
+        cleanup();
+        process.exit(1);
+      }
+
+      const item = await addToQueue(serverUrl, feature, {
+        maxIterations: parseInt(values["max-iterations"] as string, 10),
+        verbose,
+        workingDir: values["working-dir"] as string,
+        autoCommit,
+      });
+
+      console.log(`Added to queue: ${item.id}`);
+      console.log(`Feature: ${item.feature.slice(0, 60)}${item.feature.length > 60 ? "..." : ""}`);
+
+      const queue = await getQueueState(serverUrl);
+      const pending = queue.items.filter((i) => i.status === "pending").length;
+      const running = queue.items.filter((i) => i.status === "running").length;
+      console.log(`Queue status: ${running} running, ${pending} pending`);
+
+      cleanup();
+      process.exit(0);
+    }
+  } catch (error) {
+    console.error("\nQueue error:", error);
+    cleanup();
+    process.exit(1);
+  }
 
   try {
     // Handle resume

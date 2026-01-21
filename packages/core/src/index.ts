@@ -16,6 +16,12 @@ export type {
   CompleteEvent,
   ErrorEvent,
   EventCallback,
+  // Queue types
+  QueueItemStatus,
+  QueueItem,
+  QueueState,
+  QueueEventType,
+  QueueEvent,
 } from "./types.ts";
 
 // Orchestrator
@@ -62,3 +68,6 @@ export {
   broadcastToSession,
   emitSessionEvent,
 } from "./sse.ts";
+
+// Queue
+export { queue } from "./queue.ts";
