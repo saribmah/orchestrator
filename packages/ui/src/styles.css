@@ -28,8 +28,8 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
-    Arial, sans-serif;
+  font-family: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
   background: var(--color-bg);
   color: var(--color-text);
   line-height: 1.5;
@@ -320,7 +320,7 @@ h3 {
 .form-group textarea {
   resize: vertical;
   min-height: 120px;
-  font-family: inherit;
+  font-family: "Space Grotesk", inherit;
 }
 
 .form-hint {
