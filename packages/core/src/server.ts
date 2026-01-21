@@ -342,6 +342,13 @@ const port = parseInt(process.env.PORT || String(DEFAULT_PORT), 10);
 
 console.log(`Orchestrator server starting on port ${port}...`);
 
+// Initialize queue from persisted state (restore pending items)
+queue.initialize().then(() => {
+  console.log("Queue initialized");
+}).catch((err) => {
+  console.error("Failed to initialize queue:", err);
+});
+
 export default {
   port,
   fetch: app.fetch,

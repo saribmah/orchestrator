@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync } from "fs";
+import { homedir } from "os";
+import { join } from "path";
 import { orchestrate } from "./orchestrator.ts";
 import { bus, emitEvent } from "./bus.ts";
 import { generateSessionId } from "./state.ts";
@@ -8,6 +11,36 @@ import type {
   QueueEventType,
   OrchestratorOptions,
 } from "./types.ts";
+
+// Queue persistence path
+const ORCHESTRATOR_DIR = join(homedir(), ".orchestrator");
+const QUEUE_FILE = join(ORCHESTRATOR_DIR, "queue.json");
+
+function ensureOrchestratorDir(): void {
+  if (!existsSync(ORCHESTRATOR_DIR)) {
+    mkdirSync(ORCHESTRATOR_DIR, { recursive: true });
+  }
+}
+
+async function loadQueueState(): Promise<QueueState | null> {
+  try {
+    if (!existsSync(QUEUE_FILE)) return null;
+    const file = Bun.file(QUEUE_FILE);
+    const data = await file.json();
+    return data as QueueState;
+  } catch {
+    return null;
+  }
+}
+
+async function saveQueueState(state: QueueState): Promise<void> {
+  try {
+    ensureOrchestratorDir();
+    await Bun.write(QUEUE_FILE, JSON.stringify(state, null, 2));
+  } catch (error) {
+    console.error("[Queue] Failed to save queue state:", error);
+  }
+}
 
 // Pending questions for interactive queue sessions
 interface PendingQuestion {
@@ -45,6 +78,51 @@ class SessionQueue {
     isProcessing: false,
     currentItemId: undefined,
   };
+  private initialized = false;
+
+  /**
+   * Initialize queue from persisted state
+   */
+  async initialize(): Promise<void> {
+    if (this.initialized) return;
+
+    const savedState = await loadQueueState();
+    if (savedState) {
+      this.state = savedState;
+
+      // Handle items that were running when server crashed
+      // Mark them as failed and reset processing state
+      for (const item of this.state.items) {
+        if (item.status === "running") {
+          item.status = "failed";
+          item.error = "Server restarted while processing";
+          item.completedAt = new Date().toISOString();
+        }
+      }
+
+      this.state.isProcessing = false;
+      this.state.currentItemId = undefined;
+
+      // Save the cleaned up state
+      await this.save();
+
+      const pendingCount = this.state.items.filter((i) => i.status === "pending").length;
+      if (pendingCount > 0) {
+        console.log(`[Queue] Restored ${pendingCount} pending item(s) from previous session`);
+        // Auto-start processing if there are pending items
+        this.processNext();
+      }
+    }
+
+    this.initialized = true;
+  }
+
+  /**
+   * Save queue state to disk
+   */
+  private async save(): Promise<void> {
+    await saveQueueState(this.state);
+  }
 
   /**
    * Add a new item to the queue
@@ -59,6 +137,7 @@ class SessionQueue {
     };
 
     this.state.items.push(item);
+    this.save(); // Persist immediately
     emitQueueEvent("queue_item_added", { itemId: item.id, item, queue: this.getState() });
 
     // Auto-start processing if not already running
@@ -88,6 +167,8 @@ class SessionQueue {
       emitQueueEvent("queue_item_added", { itemId: item.id, item, queue: this.getState() });
     }
 
+    this.save(); // Persist after all items added
+
     // Auto-start processing if not already running
     if (!this.state.isProcessing && addedItems.length > 0) {
       this.processNext();
@@ -107,6 +188,7 @@ class SessionQueue {
     if (index === -1) return false;
 
     this.state.items.splice(index, 1);
+    this.save(); // Persist
     emitQueueEvent("queue_item_removed", { itemId, queue: this.getState() });
 
     return true;
@@ -118,6 +200,7 @@ class SessionQueue {
   clearPending(): number {
     const pendingCount = this.state.items.filter((item) => item.status === "pending").length;
     this.state.items = this.state.items.filter((item) => item.status !== "pending");
+    this.save(); // Persist
     emitQueueEvent("queue_cleared", { queue: this.getState() });
     return pendingCount;
   }
@@ -168,6 +251,7 @@ class SessionQueue {
     if (!nextItem) {
       this.state.isProcessing = false;
       this.state.currentItemId = undefined;
+      this.save(); // Persist idle state
       return;
     }
 
@@ -179,6 +263,8 @@ class SessionQueue {
     // Generate session ID
     const sessionId = generateSessionId();
     nextItem.sessionId = sessionId;
+
+    this.save(); // Persist running state
 
     emitQueueEvent("queue_item_started", {
       itemId: nextItem.id,
@@ -213,6 +299,7 @@ class SessionQueue {
 
       if (finalState.status === "approved") {
         nextItem.status = "completed";
+        this.save(); // Persist completed state
         emitQueueEvent("queue_item_completed", {
           itemId: nextItem.id,
           item: nextItem,
@@ -221,6 +308,7 @@ class SessionQueue {
       } else {
         nextItem.status = "failed";
         nextItem.error = `Session ended with status: ${finalState.status}`;
+        this.save(); // Persist failed state
         emitQueueEvent("queue_item_failed", {
           itemId: nextItem.id,
           item: nextItem,
@@ -231,6 +319,8 @@ class SessionQueue {
       nextItem.status = "failed";
       nextItem.completedAt = new Date().toISOString();
       nextItem.error = error instanceof Error ? error.message : "Unknown error";
+
+      this.save(); // Persist failed state
 
       emitQueueEvent("queue_item_failed", {
         itemId: nextItem.id,

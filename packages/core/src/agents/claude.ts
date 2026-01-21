@@ -37,6 +37,7 @@ const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 async function readStreamWithTimeout(
   stream: ReadableStream<Uint8Array> | null,
   timeoutMs: number,
+  abortSignal?: { aborted: boolean },
 ): Promise<string> {
   if (!stream) return "";
 
@@ -44,12 +45,20 @@ async function readStreamWithTimeout(
   const chunks: Uint8Array[] = [];
   const decoder = new TextDecoder();
 
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error("Stream read timeout")), timeoutMs);
+    timeoutId = setTimeout(() => {
+      if (!abortSignal?.aborted) {
+        reject(new Error("Stream read timeout"));
+      }
+    }, timeoutMs);
   });
 
   try {
     while (true) {
+      // Check if aborted
+      if (abortSignal?.aborted) break;
+
       const readPromise = reader.read();
       const result = await Promise.race([readPromise, timeoutPromise]);
 
@@ -58,8 +67,20 @@ async function readStreamWithTimeout(
         chunks.push(result.value);
       }
     }
+  } catch (error) {
+    // If aborted, don't rethrow - just return what we have
+    if (abortSignal?.aborted) {
+      // Continue to return collected chunks
+    } else {
+      throw error;
+    }
   } finally {
-    reader.releaseLock();
+    if (timeoutId) clearTimeout(timeoutId);
+    try {
+      reader.releaseLock();
+    } catch {
+      // Ignore release errors
+    }
   }
 
   // Concatenate all chunks
@@ -79,6 +100,9 @@ export async function runClaude(
   workingDir: string,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<AgentResult> {
+  const abortSignal = { aborted: false };
+  let mainTimeoutId: ReturnType<typeof setTimeout> | undefined;
+
   try {
     const proc = spawn([CLAUDE_PATH, "-p", prompt, "--dangerously-skip-permissions"], {
       cwd: workingDir,
@@ -93,21 +117,55 @@ export async function runClaude(
 
     const exitPromise = proc.exited;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error(`Claude timed out after ${timeoutMs / 1000}s`)), timeoutMs);
+      mainTimeoutId = setTimeout(() => {
+        reject(new Error(`Claude timed out after ${timeoutMs / 1000}s`));
+      }, timeoutMs);
     });
 
-    const stdoutPromise = readStreamWithTimeout(proc.stdout, timeoutMs);
-    const stderrPromise = readStreamWithTimeout(proc.stderr, timeoutMs);
+    // Start reading streams with abort signal
+    const stdoutPromise = readStreamWithTimeout(proc.stdout, timeoutMs + 5000, abortSignal);
+    const stderrPromise = readStreamWithTimeout(proc.stderr, timeoutMs + 5000, abortSignal);
 
     let exitCode: number;
+    let timedOut = false;
     try {
       exitCode = await Promise.race([exitPromise, timeoutPromise]);
     } catch (error) {
+      timedOut = true;
+      // Signal streams to abort
+      abortSignal.aborted = true;
       try {
         proc.kill();
       } catch {}
-      throw error;
+
+      // Wait a bit for streams to settle, then collect what we have
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Try to get partial output
+      let partialStdout = "";
+      let partialStderr = "";
+      try {
+        partialStdout = await Promise.race([
+          stdoutPromise,
+          new Promise<string>((resolve) => setTimeout(() => resolve(""), 500)),
+        ]);
+        partialStderr = await Promise.race([
+          stderrPromise,
+          new Promise<string>((resolve) => setTimeout(() => resolve(""), 500)),
+        ]);
+      } catch {
+        // Ignore errors getting partial output
+      }
+
+      return {
+        success: false,
+        output: partialStdout,
+        error: `Claude timed out after ${timeoutMs / 1000}s${partialStderr ? `: ${partialStderr}` : ""}`,
+      };
     }
+
+    // Clear the main timeout since process exited
+    if (mainTimeoutId) clearTimeout(mainTimeoutId);
 
     const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
 
@@ -124,6 +182,10 @@ export async function runClaude(
       output: stdout,
     };
   } catch (error) {
+    // Ensure abort signal is set
+    abortSignal.aborted = true;
+    if (mainTimeoutId) clearTimeout(mainTimeoutId);
+
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return {
       success: false,

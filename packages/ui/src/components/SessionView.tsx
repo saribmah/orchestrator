@@ -3,6 +3,7 @@ import {
   getSession,
   subscribeToEvents,
   respondToQuestion,
+  resumeSession,
   type SessionState,
   type ServerEvent,
 } from "../api.ts";
@@ -26,6 +27,7 @@ export function SessionView({ sessionId, onBack }: SessionViewProps) {
   const [connected, setConnected] = useState(false);
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isResuming, setIsResuming] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -130,6 +132,10 @@ export function SessionView({ sessionId, onBack }: SessionViewProps) {
 
       case "status":
         if (data.status) {
+          // Reset resuming state when session starts running
+          if (["implementing", "prompting", "reviewing"].includes(data.status as string)) {
+            setIsResuming(false);
+          }
           setSession((prev) =>
             prev
               ? {
@@ -231,6 +237,23 @@ export function SessionView({ sessionId, onBack }: SessionViewProps) {
     }
   }
 
+  async function handleResume() {
+    try {
+      setIsResuming(true);
+      setError(null);
+      await resumeSession(sessionId, { interactive: false, verbose: false });
+      // Session will now emit events through the SSE connection
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to resume session");
+      setIsResuming(false);
+    }
+  }
+
+  function isResumable(status: string): boolean {
+    // Can only resume sessions that have stopped (not currently active or already approved)
+    return ["failed", "idle"].includes(status);
+  }
+
   function getStatusColor(status: string): string {
     switch (status) {
       case "approved":
@@ -291,6 +314,15 @@ export function SessionView({ sessionId, onBack }: SessionViewProps) {
             <span className="iteration-badge">
               Iteration {session.iteration}/{session.maxIterations}
             </span>
+            {isResumable(session.status) && (
+              <button
+                className="btn btn-primary btn-small"
+                onClick={handleResume}
+                disabled={isResuming}
+              >
+                {isResuming ? "Resuming..." : "Resume Session"}
+              </button>
+            )}
           </div>
           <p className="session-feature-full">{session.feature}</p>
           <p className="session-dir">Working directory: {session.workingDir}</p>

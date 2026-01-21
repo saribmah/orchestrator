@@ -10,6 +10,7 @@ const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 async function readStreamWithTimeout(
   stream: ReadableStream<Uint8Array> | null,
   timeoutMs: number,
+  abortSignal?: { aborted: boolean },
 ): Promise<string> {
   if (!stream) return "";
 
@@ -17,12 +18,19 @@ async function readStreamWithTimeout(
   const chunks: Uint8Array[] = [];
   const decoder = new TextDecoder();
 
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error("Stream read timeout")), timeoutMs);
+    timeoutId = setTimeout(() => {
+      if (!abortSignal?.aborted) {
+        reject(new Error("Stream read timeout"));
+      }
+    }, timeoutMs);
   });
 
   try {
     while (true) {
+      if (abortSignal?.aborted) break;
+
       const readPromise = reader.read();
       const result = await Promise.race([readPromise, timeoutPromise]);
 
@@ -31,8 +39,19 @@ async function readStreamWithTimeout(
         chunks.push(result.value);
       }
     }
+  } catch (error) {
+    if (abortSignal?.aborted) {
+      // Continue to return collected chunks
+    } else {
+      throw error;
+    }
   } finally {
-    reader.releaseLock();
+    if (timeoutId) clearTimeout(timeoutId);
+    try {
+      reader.releaseLock();
+    } catch {
+      // Ignore release errors
+    }
   }
 
   const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
@@ -52,6 +71,8 @@ export async function runCodexPromptGenerator(
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<AgentResult> {
   const outputFile = join(tmpdir(), `codex-prompt-${Date.now()}.txt`);
+  const abortSignal = { aborted: false };
+  let mainTimeoutId: ReturnType<typeof setTimeout> | undefined;
 
   try {
     const prompt = `Given this feature request: "${feature}", generate a detailed implementation prompt for another AI coding agent. Include specific files to create/modify, acceptance criteria, and implementation steps. Be concise but thorough. Do not make any changes, just analyze and provide the prompt.`;
@@ -78,25 +99,46 @@ export async function runCodexPromptGenerator(
 
     const exitPromise = proc.exited;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error(`Codex timed out after ${timeoutMs / 1000}s`)), timeoutMs);
+      mainTimeoutId = setTimeout(() => {
+        reject(new Error(`Codex timed out after ${timeoutMs / 1000}s`));
+      }, timeoutMs);
     });
 
-    const stdoutPromise = readStreamWithTimeout(proc.stdout, timeoutMs);
-    const stderrPromise = readStreamWithTimeout(proc.stderr, timeoutMs);
+    const stdoutPromise = readStreamWithTimeout(proc.stdout, timeoutMs + 5000, abortSignal);
+    const stderrPromise = readStreamWithTimeout(proc.stderr, timeoutMs + 5000, abortSignal);
 
     let exitCode: number;
     try {
       exitCode = await Promise.race([exitPromise, timeoutPromise]);
     } catch (error) {
+      abortSignal.aborted = true;
       try {
         proc.kill();
       } catch {}
-      throw error;
+
+      // Wait for streams to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      try {
+        await unlink(outputFile);
+      } catch {}
+
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      return {
+        success: false,
+        output: "",
+        error: `Failed to run Codex prompt generator: ${errorMessage}`,
+      };
     }
+
+    if (mainTimeoutId) clearTimeout(mainTimeoutId);
 
     const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
 
     if (exitCode !== 0) {
+      try {
+        await unlink(outputFile);
+      } catch {}
       return {
         success: false,
         output: stdout || stderr,
@@ -121,6 +163,9 @@ export async function runCodexPromptGenerator(
       output,
     };
   } catch (error) {
+    abortSignal.aborted = true;
+    if (mainTimeoutId) clearTimeout(mainTimeoutId);
+
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
     try {
@@ -141,6 +186,8 @@ export async function runCodexReview(
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<AgentResult> {
   const outputFile = join(tmpdir(), `codex-review-${Date.now()}.txt`);
+  const abortSignal = { aborted: false };
+  let mainTimeoutId: ReturnType<typeof setTimeout> | undefined;
 
   try {
     const reviewPrompt = `Review the uncommitted changes in this repository against the original feature request.
@@ -179,28 +226,47 @@ Do not make any changes - only analyze and provide your review verdict.`;
 
     const exitPromise = proc.exited;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(
+      mainTimeoutId = setTimeout(
         () => reject(new Error(`Codex review timed out after ${timeoutMs / 1000}s`)),
         timeoutMs,
       );
     });
 
-    const stdoutPromise = readStreamWithTimeout(proc.stdout, timeoutMs);
-    const stderrPromise = readStreamWithTimeout(proc.stderr, timeoutMs);
+    const stdoutPromise = readStreamWithTimeout(proc.stdout, timeoutMs + 5000, abortSignal);
+    const stderrPromise = readStreamWithTimeout(proc.stderr, timeoutMs + 5000, abortSignal);
 
     let exitCode: number;
     try {
       exitCode = await Promise.race([exitPromise, timeoutPromise]);
     } catch (error) {
+      abortSignal.aborted = true;
       try {
         proc.kill();
       } catch {}
-      throw error;
+
+      // Wait for streams to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      try {
+        await unlink(outputFile);
+      } catch {}
+
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      return {
+        success: false,
+        output: "",
+        error: `Failed to run Codex review: ${errorMessage}`,
+      };
     }
+
+    if (mainTimeoutId) clearTimeout(mainTimeoutId);
 
     const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
 
     if (exitCode !== 0) {
+      try {
+        await unlink(outputFile);
+      } catch {}
       return {
         success: false,
         output: stdout || stderr,
@@ -225,6 +291,9 @@ Do not make any changes - only analyze and provide your review verdict.`;
       output,
     };
   } catch (error) {
+    abortSignal.aborted = true;
+    if (mainTimeoutId) clearTimeout(mainTimeoutId);
+
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
     try {
