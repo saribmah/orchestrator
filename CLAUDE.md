@@ -6,21 +6,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Orchestrator is a multi-agent feature implementation tool that coordinates Claude Code and Codex CLIs. It automates the workflow: feature description → prompt generation (Codex) → implementation (Claude) → review (Codex) → iterate until approved.
 
+## Project Structure
+
+Bun workspace monorepo with three packages:
+
+```
+packages/
+├── core/     # Server, orchestration logic, event bus
+├── cli/      # Command-line interface
+└── ui/       # React web interface
+```
+
 ## Commands
 
 ```bash
 # Install dependencies
 bun install
 
-# Run the tool
-bun run src/index.ts "Feature description"
+# Type checking
+bun run typecheck
 
-# With options
-bun run src/index.ts "Feature" --max-iterations 5 --verbose
-bun run src/index.ts "Feature" --auto        # No prompts, fully autonomous
-bun run src/index.ts "Feature" -C /path      # Specify working directory
-bun run src/index.ts -f feature.md           # Read feature from file
-bun run src/index.ts --resume                # Resume last session
+# Linting
+bun run lint
+
+# Start core server
+bun run --filter @orchestrator/core start
+
+# Start UI dev server
+bun run --filter @orchestrator/ui dev
+
+# Run CLI
+bun run --filter @orchestrator/cli start "Feature description"
+
+# CLI with options
+bun run --filter @orchestrator/cli start "Feature" --max-iterations 5 --verbose
+bun run --filter @orchestrator/cli start "Feature" --auto
+bun run --filter @orchestrator/cli start "Feature" -C /path
+bun run --filter @orchestrator/cli start --resume
 ```
 
 ## Architecture
@@ -30,22 +52,50 @@ bun run src/index.ts --resume                # Resume last session
 Codex (prompt generation) → Claude (implementation) → Codex (review) → [APPROVED or iterate]
 ```
 
-### Key Components
+### Core Package (`packages/core/`)
 
-- **`src/orchestrator.ts`** - Main coordination logic, manages the iteration loop
-- **`src/agents/claude.ts`** - Claude CLI wrapper (10min timeout, spawns `claude -p <prompt> --dangerously-skip-permissions`)
-- **`src/agents/codex.ts`** - Codex CLI wrapper (5min timeout, read-only sandbox mode)
-- **`src/state.ts`** - Session persistence to `~/.orchestrator/last-session.json` for resume functionality
-- **`src/prompts/templates.ts`** - Prompt template builders for implementation and feedback
+- **`server.ts`** - Hono HTTP server with REST API and SSE endpoints
+- **`orchestrator.ts`** - Main coordination logic, manages the iteration loop
+- **`bus.ts`** - Event bus for pub/sub with 30s event buffering for late-joining clients
+- **`sse.ts`** - SSE stream management, subscribes to bus and forwards to clients
+- **`state.ts`** - Session persistence to `~/.orchestrator/sessions/`
+- **`types.ts`** - TypeScript interfaces and event types
+- **`agents/claude.ts`** - Claude CLI wrapper (10min timeout)
+- **`agents/codex.ts`** - Codex CLI wrapper (5min timeout, read-only sandbox)
+- **`prompts/templates.ts`** - Prompt template builders
 
-### Agent Configuration
+### CLI Package (`packages/cli/`)
 
-- **Claude**: 10-minute timeout, searches for binary in `~/.claude/local/claude`, `~/.local/bin/claude`, `/usr/local/bin/claude`, or PATH
-- **Codex**: 5-minute timeout, runs with `--sandbox read-only` to prevent changes during prompting/review
+- **`index.ts`** - Thin HTTP client that communicates with core server, listens to SSE for real-time updates
 
-### State Management
+### UI Package (`packages/ui/`)
 
-Session state is persisted to `~/.orchestrator/last-session.json` after every step. Contains feature description, iteration count, agent response history, and `lastFailedStep` for resume recovery.
+- React + Vite application
+- **`api.ts`** - API client with fetch and EventSource for SSE
+- **`components/`** - Landing, NewSession, SessionList, SessionView
+
+### Event Flow
+
+```
+Orchestrator → bus.publish(event) → SSE subscribers → Browser/CLI
+                     ↓
+              Event buffer (30s, 100 events max)
+                     ↓
+              Late-joining clients receive buffered events
+```
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/sessions` | GET | List all sessions |
+| `/sessions` | POST | Start new session |
+| `/sessions/:id` | GET | Get session state |
+| `/sessions/:id/resume` | POST | Resume session |
+| `/sessions/:id/respond` | POST | Respond to question |
+| `/sessions/:id/events` | GET | SSE event stream |
+| `/stats` | GET | Server stats |
 
 ### Approval Detection
 
@@ -55,4 +105,5 @@ Review is approved if output contains (case-insensitive): "APPROVED", "LGTM", or
 
 - Use Bun instead of Node.js/npm/pnpm
 - Agent functions return `{success: boolean, output: string, error?: string}` tuple pattern
-- Concurrent stdout/stderr reading with timeout protection via `Promise.race()`
+- Events flow through the bus - use `bus.publish()` or `emitEvent()` helper
+- SSE connections auto-replay buffered events for late joiners
