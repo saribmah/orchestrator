@@ -48,3 +48,17 @@ export {
   buildFeedbackPrompt,
   formatIterationHeader,
 } from "./prompts/templates.ts";
+
+// Event Bus
+export { bus, emitEvent } from "./bus.ts";
+export type { BusEventHandler } from "./bus.ts";
+
+// SSE
+export {
+  createSSEHandler,
+  startKeepAlive,
+  getConnectionCount,
+  getTotalConnectionCount,
+  broadcastToSession,
+  emitSessionEvent,
+} from "./sse.ts";

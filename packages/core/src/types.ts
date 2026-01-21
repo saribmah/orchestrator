@@ -43,6 +43,7 @@ export interface AgentResult {
 
 // Server event types for SSE
 export type ServerEventType =
+  | "session_started"
   | "status"
   | "log"
   | "agent_start"
@@ -50,7 +51,8 @@ export type ServerEventType =
   | "question"
   | "iteration"
   | "complete"
-  | "error";
+  | "error"
+  | "ping";
 
 export interface ServerEvent {
   type: ServerEventType;

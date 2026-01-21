@@ -63,6 +63,15 @@ export async function orchestrate(
   let resumingFromStep = resumeState?.lastFailedStep;
   let resumingIteration = resumeState?.iteration || 0;
 
+  // Emit session started event immediately
+  emit("session_started", {
+    sessionId: state.id,
+    feature: state.feature,
+    maxIterations: state.maxIterations,
+    workingDir: options.workingDir,
+    resumed: !!resumeState,
+  });
+
   emit("log", {
     level: "info",
     message: `Session: ${state.id}`,
@@ -74,6 +83,10 @@ export async function orchestrate(
   emit("log", {
     level: "info",
     message: `Working directory: ${options.workingDir}`,
+  });
+  emit("log", {
+    level: "info",
+    message: `Max iterations: ${state.maxIterations}`,
   });
 
   if (resumeState) {

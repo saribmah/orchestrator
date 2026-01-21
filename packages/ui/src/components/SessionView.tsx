@@ -104,7 +104,30 @@ export function SessionView({ sessionId, onBack }: SessionViewProps) {
     const data = event.data;
     const id = `${event.timestamp}-${Math.random()}`;
 
+    // Helper to add log entry only if not duplicate
+    const addLogEntry = (entry: LogEntry) => {
+      setLogs((prev) => {
+        // Check if we already have this entry (by content and approximate time)
+        const isDuplicate = prev.some(
+          (e) => e.content === entry.content && e.type === entry.type
+        );
+        if (isDuplicate) return prev;
+        return [...prev, entry];
+      });
+    };
+
     switch (event.type) {
+      case "session_started":
+        addLogEntry({
+          id,
+          type: "session_started",
+          timestamp: event.timestamp,
+          content: data.resumed
+            ? `Session resumed: ${data.sessionId}`
+            : `Session started: ${data.sessionId}`,
+        });
+        break;
+
       case "status":
         if (data.status) {
           setSession((prev) =>
@@ -120,28 +143,22 @@ export function SessionView({ sessionId, onBack }: SessionViewProps) {
         break;
 
       case "log":
-        setLogs((prev) => [
-          ...prev,
-          {
-            id,
-            type: "log",
-            timestamp: event.timestamp,
-            content: data.message as string,
-            level: data.level as string,
-          },
-        ]);
+        addLogEntry({
+          id,
+          type: "log",
+          timestamp: event.timestamp,
+          content: data.message as string,
+          level: data.level as string,
+        });
         break;
 
       case "iteration":
-        setLogs((prev) => [
-          ...prev,
-          {
-            id,
-            type: "iteration",
-            timestamp: event.timestamp,
-            content: `Iteration ${data.iteration}/${data.maxIterations} - ${data.phase}`,
-          },
-        ]);
+        addLogEntry({
+          id,
+          type: "iteration",
+          timestamp: event.timestamp,
+          content: `Iteration ${data.iteration}/${data.maxIterations} - ${data.phase}`,
+        });
         setSession((prev) =>
           prev
             ? {
@@ -153,27 +170,21 @@ export function SessionView({ sessionId, onBack }: SessionViewProps) {
         break;
 
       case "agent_start":
-        setLogs((prev) => [
-          ...prev,
-          {
-            id,
-            type: "agent_start",
-            timestamp: event.timestamp,
-            content: `[${data.agent}] Starting ${data.role}...`,
-          },
-        ]);
+        addLogEntry({
+          id,
+          type: "agent_start",
+          timestamp: event.timestamp,
+          content: `[${data.agent}] Starting ${data.role}...`,
+        });
         break;
 
       case "agent_complete":
-        setLogs((prev) => [
-          ...prev,
-          {
-            id,
-            type: data.success ? "agent_complete" : "agent_error",
-            timestamp: event.timestamp,
-            content: `[${data.agent}] ${data.role} ${data.success ? "complete" : "failed"}`,
-          },
-        ]);
+        addLogEntry({
+          id,
+          type: data.success ? "agent_complete" : "agent_error",
+          timestamp: event.timestamp,
+          content: `[${data.agent}] ${data.role} ${data.success ? "complete" : "failed"}`,
+        });
         break;
 
       case "question":
@@ -189,30 +200,24 @@ export function SessionView({ sessionId, onBack }: SessionViewProps) {
               }
             : prev
         );
-        setLogs((prev) => [
-          ...prev,
-          {
-            id,
-            type: data.status === "approved" ? "success" : "error",
-            timestamp: event.timestamp,
-            content:
-              data.status === "approved"
-                ? `SUCCESS: Implementation approved in ${data.iterations} iteration(s)`
-                : `Implementation ${data.status}`,
-          },
-        ]);
+        addLogEntry({
+          id,
+          type: data.status === "approved" ? "success" : "error",
+          timestamp: event.timestamp,
+          content:
+            data.status === "approved"
+              ? `SUCCESS: Implementation approved in ${data.iterations} iteration(s)`
+              : `Implementation ${data.status}`,
+        });
         break;
 
       case "error":
-        setLogs((prev) => [
-          ...prev,
-          {
-            id,
-            type: "error",
-            timestamp: event.timestamp,
-            content: data.message as string,
-          },
-        ]);
+        addLogEntry({
+          id,
+          type: "error",
+          timestamp: event.timestamp,
+          content: data.message as string,
+        });
         break;
     }
   }
@@ -242,6 +247,7 @@ export function SessionView({ sessionId, onBack }: SessionViewProps) {
   }
 
   function getLogClass(entry: LogEntry): string {
+    if (entry.type === "session_started") return "log-session-started";
     if (entry.type === "iteration") return "log-iteration";
     if (entry.type === "success") return "log-success";
     if (entry.type === "error" || entry.type === "agent_error") return "log-error";
