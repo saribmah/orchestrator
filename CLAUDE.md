@@ -41,6 +41,7 @@ bun run --filter @orchestrator/cli start "Feature description"
 # CLI with options
 bun run --filter @orchestrator/cli start "Feature" --max-iterations 5 --verbose
 bun run --filter @orchestrator/cli start "Feature" --auto
+bun run --filter @orchestrator/cli start "Feature" --auto-commit  # Commit after approval
 bun run --filter @orchestrator/cli start "Feature" -C /path
 bun run --filter @orchestrator/cli start --resume
 ```
@@ -50,6 +51,8 @@ bun run --filter @orchestrator/cli start --resume
 ### Workflow Loop
 ```
 Codex (prompt generation) → Claude (implementation) → Codex (review) → [APPROVED or iterate]
+                                                                              ↓
+                                                               Claude (auto-commit if enabled)
 ```
 
 ### Core Package (`packages/core/`)

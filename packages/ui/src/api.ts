@@ -33,6 +33,7 @@ export interface NewSessionOptions {
   interactive: boolean;
   verbose: boolean;
   workingDir: string;
+  autoCommit: boolean;
 }
 
 export interface ServerEvent {
@@ -75,6 +76,7 @@ export async function startSession(options: NewSessionOptions): Promise<string> 
         interactive: options.interactive,
         verbose: options.verbose,
         workingDir: options.workingDir,
+        autoCommit: options.autoCommit,
       },
     }),
   });

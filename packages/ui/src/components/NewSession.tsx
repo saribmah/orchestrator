@@ -13,6 +13,7 @@ export function NewSession({ onSubmit, onCancel, isSubmitting }: NewSessionProps
   const [maxIterations, setMaxIterations] = useState(5);
   const [autoMode, setAutoMode] = useState(false);
   const [verbose, setVerbose] = useState(false);
+  const [autoCommit, setAutoCommit] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,6 +25,7 @@ export function NewSession({ onSubmit, onCancel, isSubmitting }: NewSessionProps
       maxIterations,
       interactive: !autoMode,
       verbose,
+      autoCommit,
     });
   };
 
@@ -107,6 +109,17 @@ export function NewSession({ onSubmit, onCancel, isSubmitting }: NewSessionProps
               />
               <span>Verbose Output</span>
               <span className="checkbox-hint">Show full agent outputs</span>
+            </label>
+
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={autoCommit}
+                onChange={(e) => setAutoCommit(e.target.checked)}
+                disabled={isSubmitting}
+              />
+              <span>Auto Commit</span>
+              <span className="checkbox-hint">Automatically commit changes after approval</span>
             </label>
           </div>
         </div>

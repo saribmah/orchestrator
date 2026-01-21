@@ -77,6 +77,7 @@ Opens at `http://localhost:5173`. Features:
 | `-n, --max-iterations` | Max review cycles | 5 |
 | `-i, --interactive` | Prompt before each step | true |
 | `--auto` | Run without prompts | false |
+| `--auto-commit` | Automatically commit after approval | false |
 | `-v, --verbose` | Show full agent outputs | false |
 | `-C, --working-dir` | Directory to work in | cwd |
 | `--resume` | Resume last session | - |

@@ -55,6 +55,7 @@ app.post("/sessions", async (c) => {
     interactive: options?.interactive ?? true,
     verbose: options?.verbose ?? false,
     workingDir: options?.workingDir ?? process.cwd(),
+    autoCommit: options?.autoCommit ?? false,
   };
 
   // Generate session ID upfront so we can return it to the client
@@ -139,6 +140,7 @@ app.post("/sessions/:id/resume", async (c) => {
     interactive: options?.interactive ?? true,
     verbose: options?.verbose ?? false,
     workingDir: savedState.workingDir,
+    autoCommit: options?.autoCommit ?? false,
   };
 
   // Resume orchestration in background

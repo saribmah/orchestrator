@@ -240,6 +240,7 @@ export function SessionView({ sessionId, onBack }: SessionViewProps) {
       case "implementing":
       case "reviewing":
       case "prompting":
+      case "committing":
         return "status-active";
       default:
         return "status-pending";

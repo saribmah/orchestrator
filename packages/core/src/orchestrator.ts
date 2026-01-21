@@ -308,6 +308,63 @@ export async function orchestrate(
 
     // Step 4: Check if approved
     if (isApproved(reviewResult.output)) {
+      // Step 5: Auto-commit if enabled
+      if (options.autoCommit) {
+        state.status = "committing";
+        await saveState(state);
+
+        emit("status", {
+          status: state.status,
+          iteration: state.iteration,
+          maxIterations: state.maxIterations,
+        });
+
+        emit("agent_start", { agent: "claude", role: "committer" });
+
+        const commitPrompt = `The following feature has been successfully implemented and approved:
+
+${state.feature}
+
+Please commit all the changes with a clear, descriptive commit message that summarizes what was implemented. Use conventional commit format if appropriate (e.g., feat:, fix:, refactor:).
+
+Do not ask any questions - just create the commit.`;
+
+        const commitResult = await runClaude(commitPrompt, options.workingDir);
+
+        emit("agent_complete", {
+          agent: "claude",
+          role: "committer",
+          output: commitResult.output,
+          success: commitResult.success,
+        });
+
+        if (!commitResult.success) {
+          emit("error", {
+            message: commitResult.error || "Failed to commit changes",
+            fatal: false,
+          });
+          emit("log", {
+            level: "info",
+            message: "Auto-commit failed, but implementation was approved",
+          });
+        } else {
+          state.history.push({
+            agent: "claude",
+            role: "committer",
+            content: commitResult.output,
+            timestamp: new Date(),
+            iteration: state.iteration,
+          });
+          await saveState(state);
+
+          if (options.verbose) {
+            emit("log", { level: "verbose", message: commitResult.output });
+          }
+
+          emit("log", { level: "info", message: "Changes committed successfully" });
+        }
+      }
+
       state.status = "approved";
       await saveState(state);
       emit("complete", { status: "approved", iterations: state.iteration });

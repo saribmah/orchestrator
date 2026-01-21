@@ -2,13 +2,14 @@ export type OrchestrationStatus =
   | "prompting"
   | "implementing"
   | "reviewing"
+  | "committing"
   | "approved"
   | "failed"
   | "waiting_for_input";
 
 export interface AgentResponse {
   agent: "claude" | "codex";
-  role: "prompt-generator" | "implementer" | "reviewer";
+  role: "prompt-generator" | "implementer" | "reviewer" | "committer";
   content: string;
   timestamp: Date;
   iteration: number;
@@ -33,6 +34,7 @@ export interface OrchestratorOptions {
   interactive: boolean;
   verbose: boolean;
   workingDir: string;
+  autoCommit: boolean;
 }
 
 export interface AgentResult {

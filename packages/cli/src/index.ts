@@ -21,6 +21,7 @@ Options:
   -n, --max-iterations <n>  Maximum review cycles (default: 5)
   -i, --interactive         Prompt before each step (default: true)
   --auto                    Run without prompts
+  --auto-commit             Automatically commit changes after approval
   -v, --verbose             Show full agent outputs
   -C, --working-dir <dir>   Directory to work in (default: cwd)
   --server                  Start as server only (no CLI interaction)
@@ -224,6 +225,7 @@ async function main() {
       "max-iterations": { type: "string", short: "n", default: "5" },
       interactive: { type: "boolean", short: "i", default: true },
       auto: { type: "boolean", default: false },
+      "auto-commit": { type: "boolean", default: false },
       verbose: { type: "boolean", short: "v", default: false },
       "working-dir": { type: "string", short: "C", default: process.cwd() },
       server: { type: "boolean", default: false },
@@ -241,6 +243,7 @@ async function main() {
   const serverUrl = values["server-url"] as string;
   const verbose = values.verbose as boolean;
   const interactive = values.auto ? false : (values.interactive as boolean);
+  const autoCommit = values["auto-commit"] as boolean;
 
   // Server-only mode
   if (values.server) {
@@ -314,7 +317,7 @@ async function main() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          options: { interactive, verbose },
+          options: { interactive, verbose, autoCommit },
         }),
       });
 
@@ -362,6 +365,7 @@ async function main() {
           interactive,
           verbose,
           workingDir: values["working-dir"] as string,
+          autoCommit,
         },
       }),
     });
