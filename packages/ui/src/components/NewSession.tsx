@@ -11,7 +11,7 @@ export function NewSession({ onSubmit, onCancel, isSubmitting }: NewSessionProps
   const [feature, setFeature] = useState("");
   const [workingDir, setWorkingDir] = useState("");
   const [maxIterations, setMaxIterations] = useState(5);
-  const [interactive, setInteractive] = useState(true);
+  const [autoMode, setAutoMode] = useState(false);
   const [verbose, setVerbose] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -22,7 +22,7 @@ export function NewSession({ onSubmit, onCancel, isSubmitting }: NewSessionProps
       feature: feature.trim(),
       workingDir: workingDir.trim() || process.cwd?.() || "/",
       maxIterations,
-      interactive,
+      interactive: !autoMode,
       verbose,
     });
   };
@@ -77,7 +77,7 @@ export function NewSession({ onSubmit, onCancel, isSubmitting }: NewSessionProps
               value={maxIterations}
               onChange={(e) => setMaxIterations(parseInt(e.target.value) || 5)}
               min={1}
-              max={20}
+              max={10000}
               disabled={isSubmitting}
             />
             <span className="form-hint">Maximum review cycles before stopping</span>
@@ -90,12 +90,12 @@ export function NewSession({ onSubmit, onCancel, isSubmitting }: NewSessionProps
             <label className="checkbox-label">
               <input
                 type="checkbox"
-                checked={interactive}
-                onChange={(e) => setInteractive(e.target.checked)}
+                checked={autoMode}
+                onChange={(e) => setAutoMode(e.target.checked)}
                 disabled={isSubmitting}
               />
-              <span>Interactive Mode</span>
-              <span className="checkbox-hint">Prompt before each step</span>
+              <span>Auto Mode</span>
+              <span className="checkbox-hint">Run without prompts or confirmations</span>
             </label>
 
             <label className="checkbox-label">

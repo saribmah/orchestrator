@@ -48,6 +48,53 @@ export function SessionView({ sessionId, onBack }: SessionViewProps) {
     try {
       const state = await getSession(sessionId);
       setSession(state);
+
+      // Convert history to log entries
+      if (state.history && state.history.length > 0) {
+        const historyLogs: LogEntry[] = [];
+        let lastIteration = -1;
+
+        for (const entry of state.history) {
+          // Add iteration header when iteration changes
+          if (entry.iteration !== lastIteration && entry.iteration > 0) {
+            historyLogs.push({
+              id: `iteration-${entry.iteration}-${entry.timestamp}`,
+              type: "iteration",
+              timestamp: entry.timestamp,
+              content: `Iteration ${entry.iteration}/${state.maxIterations}`,
+            });
+            lastIteration = entry.iteration;
+          }
+
+          // Add the agent entry
+          const roleLabel = entry.role === "prompt-generator"
+            ? "Generated prompt"
+            : entry.role === "implementer"
+            ? "Implementation complete"
+            : "Review complete";
+
+          historyLogs.push({
+            id: `history-${historyLogs.length}-${entry.timestamp}`,
+            type: "agent_complete",
+            timestamp: entry.timestamp,
+            content: `[${entry.agent}] ${roleLabel}`,
+          });
+        }
+
+        // Add final status if session is complete
+        if (state.status === "approved" || state.status === "failed") {
+          historyLogs.push({
+            id: `final-status`,
+            type: state.status === "approved" ? "success" : "error",
+            timestamp: state.history[state.history.length - 1]?.timestamp || new Date().toISOString(),
+            content: state.status === "approved"
+              ? `SUCCESS: Implementation approved in ${state.iteration} iteration(s)`
+              : `Implementation ${state.status}`,
+          });
+        }
+
+        setLogs(historyLogs);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load session");
     }

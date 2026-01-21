@@ -3,7 +3,7 @@ import { Landing } from "./components/Landing.tsx";
 import { NewSession } from "./components/NewSession.tsx";
 import { SessionList } from "./components/SessionList.tsx";
 import { SessionView } from "./components/SessionView.tsx";
-import { getHealth, startSession, listSessions, type NewSessionOptions } from "./api.ts";
+import { getHealth, startSession, type NewSessionOptions } from "./api.ts";
 import "./styles.css";
 
 type View = "landing" | "new-session" | "session-list" | "session-view";
@@ -28,19 +28,9 @@ export function App() {
   async function handleNewSession(options: NewSessionOptions) {
     try {
       setIsSubmitting(true);
-      await startSession(options);
-
-      // Wait a moment for session to be created
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      // Get the latest session ID
-      const sessions = await listSessions();
-      const sessionId = sessions[0];
-
-      if (sessionId) {
-        setSelectedSessionId(sessionId);
-        setView("session-view");
-      }
+      const sessionId = await startSession(options);
+      setSelectedSessionId(sessionId);
+      setView("session-view");
     } catch (e) {
       console.error("Failed to start session:", e);
       alert(e instanceof Error ? e.message : "Failed to start session");

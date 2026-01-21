@@ -37,9 +37,10 @@ export async function orchestrate(
   options: OrchestratorOptions,
   callbacks: OrchestratorCallbacks,
   resumeState?: OrchestrationState,
+  sessionId?: string,
 ): Promise<OrchestrationState> {
   const state: OrchestrationState = resumeState || {
-    id: generateSessionId(),
+    id: sessionId || generateSessionId(),
     feature,
     iteration: 0,
     maxIterations: options.maxIterations,

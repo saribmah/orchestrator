@@ -64,7 +64,7 @@ export async function getSession(sessionId: string): Promise<SessionState> {
   return res.json();
 }
 
-export async function startSession(options: NewSessionOptions): Promise<void> {
+export async function startSession(options: NewSessionOptions): Promise<string> {
   const res = await fetch(`${API_URL}/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -82,6 +82,8 @@ export async function startSession(options: NewSessionOptions): Promise<void> {
     const error = await res.json();
     throw new Error(error.error || "Failed to start session");
   }
+  const data = await res.json();
+  return data.sessionId;
 }
 
 export async function resumeSession(
